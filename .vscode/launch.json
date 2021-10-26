@@ -1,0 +1,23 @@
+{
+    "configurations": [
+        {
+            "command": "npm run dev",
+            "name": "Run npm start",
+            "request": "launch",
+            "type": "node-terminal"
+        },
+    {
+        "name": "Launch nodemon via NPM",
+        "request": "launch",
+        "runtimeArgs": [
+            "run",
+            "dev"
+        ],
+        "runtimeExecutable": "npm",
+        "skipFiles": [
+            "<node_internals>/**"
+        ],
+        "type": "pwa-node"
+    }
+    ]
+}
