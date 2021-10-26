@@ -14,10 +14,12 @@ const messageSchema = yup.object({
     round_length: yup.number().integer().min(300).max(120000)
 })
 
+let clients = []
 let trivia = []
 let trivia_at = ""
 
 wss.on('connection', ws => {
+    clients.push(ws)
     ws.on('message', async message => {
         const errHandle = err => {
             ws.send(err)
@@ -35,17 +37,31 @@ wss.on('connection', ws => {
             await populate_trivia(rounds, errHandle)
             ws.send(`Starting game with paramaters: ` + JSON.stringify(msg))
             const gameLoop = () => {
-                ws.send(`Message sent after ${round_length / 10} seconds\n ${JSON.stringify(trivia.shift())}\n ${game.round + 1}/${rounds}`)
-    game.round += 1
-    if (game.round === rounds) {
-        clearInterval(game.gameLoop)
-    }
-}
-            let game = {
-    'round': 0, 'gameLoop': setInterval(gameLoop, round_length)
-}
-            gameLoop()
+                const curQ = trivia.shift()
+                let listeners = [...clients]
+                let answerEmitters = []
+                const msg = { question: curQ.question, answers: [curQ.correct_answer, ...curQ.incorrect_answers].sort() }
+                clients.forEach(conn => {
+                    conn.send(msg)
+                });
+
+                clients.forEach(ws => {
+                    answerEmitters.push(ws.on('message', () => {
+                        console.log('yes')
+                    }))
+                })
+            }
+            game.round += 1
+            if (game.round === rounds) {
+                clearInterval(game.gameLoop)
+            }
         }
+        let game = {
+            'round': 0, 'gameLoop': setInterval(gameLoop, round_length)
+        }
+        gameLoop()
+    }
+ws.on('close', () => (clients = clients.filter((conn) => (conn === ws ? false : true))))
     })
 ws.send(`Hello, you are connected with ${wss.clients.size - 1} other users!`)
 })
