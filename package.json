@@ -1,0 +1,20 @@
+{
+  "name": "trivia-app-server",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "server": "npm start ./server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^0.24.0",
+    "bufferutil": "^4.0.5",
+    "express": "^4.17.1",
+    "utf-8-validate": "^5.0.7",
+    "ws": "^8.2.3"
+  }
+}
