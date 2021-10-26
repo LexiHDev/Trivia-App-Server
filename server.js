@@ -27,15 +27,17 @@ wss.on('connection', ws => {
             rounds = msg.rounds ? msg.rounds : rounds
             round_length = msg.round_length ? msg.round_length : round_length
             ws.send(`Starting game with paramaters: ` + JSON.stringify(msg))
-            let game = {
-                'round': 0, 'func': setInterval(() => {
-                    ws.send(`Message sent after ${round_length / 10} seconds `)
-                    game.round += 1
-                    if (game.round == rounds) {
-                        clearInterval(game.func)
-                    }
-                }, round_length)
+            const gameLoop = () => {
+                ws.send(`Message sent after ${round_length / 10} seconds `)
+                game.round += 1
+                if (game.round == rounds) {
+                    clearInterval(game.func)
+                }
             }
+            let game = {
+                'round': 0, 'gameLoop': setInterval(gameLoop, round_length)
+            }
+            gameLoop()
         }
     })
     ws.send(`Hello, you are connected with ${wss.clients.size - 1} other users!`)
