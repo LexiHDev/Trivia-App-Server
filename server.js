@@ -4,6 +4,7 @@ const yup = require("yup")
 
 const wss = new WebSocket.Server({ port: 1447 })
 const msgSchema = yup.array().required().max(2).min(1)
+const roundsSchema = yup.number().min(3).max(20).required().integer()
 
 
 wss.on('connection', ws => {
@@ -13,8 +14,7 @@ wss.on('connection', ws => {
             if (msg[0] == "start_game") {
                 let rounds = 2
                 if (msg.length > 1) {
-                    msg[1] = sanitizer(msg[1], 'integer')
-                    rounds = msg[1] ? msg[1] : rounds
+                    rounds = roundsSchema.isValidSync(msg[1]) ? msg[1] : rounds
                 }
                 ws.send("Starting game in 10 seconds")
                 let game = {'round':0, 'func':setInterval(() => {
