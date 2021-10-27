@@ -79,9 +79,31 @@ const listenForPlayers = async (ws, client_res) => {
 wss.on('connection', ws => {
     clients.push(ws)
     ws.on('message', async message => {
+<<<<<<< HEAD
         let rounds = 3
         const errHandle = err => {
             ws.send(err)
+=======
+        let round_length = 3000
+        let rounds = 2
+        const msg = JSON.parse(message.toString())
+        if (!messageSchema.validateSync(msg)) {
+            ws.send("Message is not valid. Try again")
+        }
+        if (msg.cmd == "start_game") {
+            rounds = msg.rounds ? msg.rounds : rounds
+            round_length = msg.round_length ? msg.round_length : round_length
+            ws.send(`Starting game with paramaters: ` + JSON.stringify(msg))
+            let game = {
+                'round': 0, 'func': setInterval(() => {
+                    ws.send(`Message sent after ${round_length / 10} seconds `)
+                    game.round += 1
+                    if (game.round == rounds) {
+                        clearInterval(game.func)
+                    }
+                }, round_length)
+            }
+>>>>>>> parent of 58f5c38 (fix gameLoop)
         }
         await populate_trivia(rounds)
         gameLoop(round_length)
