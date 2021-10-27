@@ -79,11 +79,6 @@ const listenForPlayers = async (ws, client_res) => {
 wss.on('connection', ws => {
     clients.push(ws)
     ws.on('message', async message => {
-<<<<<<< HEAD
-        let rounds = 3
-        const errHandle = err => {
-            ws.send(err)
-=======
         let round_length = 3000
         let rounds = 2
         const msg = JSON.parse(message.toString())
@@ -103,7 +98,6 @@ wss.on('connection', ws => {
                     }
                 }, round_length)
             }
->>>>>>> parent of 58f5c38 (fix gameLoop)
         }
         await populate_trivia(rounds)
         gameLoop(round_length)
