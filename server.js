@@ -15,6 +15,11 @@ let clients = []
 let trivia = []
 let trivia_at = ""
 
+const listenForPlayers = (ws) => {
+
+}
+
+
 wss.on('connection', ws => {
     clients.push(ws)
     ws.on('message', async message => {
@@ -50,7 +55,7 @@ wss.on('connection', ws => {
                     })
                     clients.forEach(conn => {
                         conn.send(JSON.stringify(msg))
-                        curListeners.push(conn.on('message', receivedAnswer))
+                        curListeners.push(conn.on('message', receivedAnswer(msg, conn)))
                     });
                     console.log(curListeners)
 
