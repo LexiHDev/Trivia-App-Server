@@ -40,24 +40,17 @@ wss.on('connection', ws => {
                 const gameLoop = () => {
                     const curQ = trivia.shift()
                     let curListeners = []
-                    const receivedAnswer = (msg, con) => {
-                        return () => {
-                        if (msg == curQ.correct_answer) {
-                            con.send(true)
-                        } else {
-                            con.send(false)
-                        }
-                    }}
-
                     const msg = { question: curQ.question, answers: [curQ.correct_answer, ...curQ.incorrect_answers].sort() }
-                    curListeners.forEach(conn => {
-                        conn.removeListener('message', receivedAnswer)
-                    })
                     clients.forEach(conn => {
                         conn.send(JSON.stringify(msg))
-                        curListeners.push(conn.on('message', receivedAnswer(msg, conn)))
+                        curListeners.push(conn.on('message', msger => {
+                            if (msger = curQ.correct_answer) {
+                                conn.send(true)
+                            } else {
+                                conn.send(false)
+                            }
+                        }))
                     });
-                    console.log(curListeners)
 
                     game.round += 1
                     if (game.round === rounds) {
