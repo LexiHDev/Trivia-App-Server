@@ -42,10 +42,7 @@ wss.on('connection', (ws) => {
 });
 
 const registerListener = (ws) => {
-  if (ws.registered) {
-    return true
-  }
-  else if (ws.msg?.cmd == 'register' && userSchema.isValidSync(ws.msg?.user)) {
+  if (ws.msg?.cmd == 'register' && userSchema.isValidSync(ws.msg?.user)) {
     console.log('Registering :', ws.msg?.user)
     // console.log('registered as')
     ws.user = {
@@ -53,7 +50,10 @@ const registerListener = (ws) => {
       score: 0
     }
     ws.registered = true
-    ws.send("Signed in as: " + ws.user)
+    ws.send("Signed in as: " + ws.user.username)
+    clients.forEach(cli => {
+      cli.send(JSON.stringify({Users: clients.map(cli => cli.user).filter(cli => cli != undefined)}))
+    })
   }
 }
 
