@@ -21,11 +21,11 @@ const gameSchema = yup.object({
   round_length: yup.number().integer().min(3).max(60),
 })
 
-const wss = new WebSocket.Server({ port: process.env.PORT });
+const wss = new WebSocket.Server({ port: 80 });
 
+let loop = {}
 let clients = [];
 let playing = [];
-const listeners = [];
 let trivia = [];
 let trivia_at = '';
 let accepting = true;
@@ -48,7 +48,10 @@ const registerListener = (ws) => {
   else if (ws.msg?.cmd == 'register' && userSchema.isValidSync(ws.msg?.user)) {
     console.log('Registering :', ws.msg?.user)
     // console.log('registered as')
-    ws.user = ws.msg?.user
+    ws.user = {
+      username: ws.msg?.user,
+      score: 0
+    }
     ws.registered = true
     ws.send("Signed in as: " + ws.user)
   }
@@ -63,11 +66,10 @@ const msgHandler = (ws, msg) => {
     console.error(msg.toString() + ' is invalid JSON');
     return -1;
   }
-  // console.log(message, messageSchema.isValidSync(message))
+  console.log(message, messageSchema.isValidSync(message))
   if (messageSchema.isValidSync(message)) {
     ws.msg = message
-    ws.user = message.user
-    // ws.send(JSON.stringify(ws.msg));
+    ws.send(JSON.stringify(ws.msg));
   }
 };
 
@@ -95,12 +97,15 @@ const start_trivia = (ws) => {
   accepting = false
   let round = 0
   let curQ = {}
+  ws.curGame = ws.msg.game
   let gameLoop = () => {
     curQ = trivia.shift();
     ws.answer = curQ.correct_answer
+    ws.answers = [curQ.correct_answer, ...curQ.incorrect_answers].sort()
+    console.log(curQ)
     ws.information = {
       question: curQ.question,
-      answers: [curQ.correct_answer, ...curQ.incorrect_answers].sort(),
+      answers: ws.answers,
       users: playing.map(player => player.user)
     }
 
@@ -109,18 +114,24 @@ const start_trivia = (ws) => {
     })
     round += 1;
     // console.log(curQ)
-    if (ws.msg.game.rounds == round) {
+    if (ws.curGame.rounds == round) {
       clearInterval(loop)
+      playing.forEach(client => {
+        client.user.score = 0
+      })
       accepting = true
     }
   }
   gameLoop()
-  const loop = setInterval(gameLoop, ws.msg.game.round_length * 1000)
+  loop = setInterval(gameLoop, ws.curGame.round_length * 1000)
 }
 
 
 const listenForAnswers = (ws) => {
-  if (ws.answer == ws.answers[ws.msg.answer]) {
+  // console.log(ws.msg?.answer, ws.answer, ws.answers)
+  if (ws.answer == ws.answers[Number(ws.msg?.answer)]) {
+    ws.user.score += 1
+    ws.answer = 'LOLNOPE'
     ws.send('correct');
   } else ws.send('incorrect')
 };
