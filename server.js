@@ -1,142 +1,150 @@
 const WebSocket = require('ws');
-const yup = require("yup");
-const { default: axios } = require('axios');
-const { WebSocketServer } = require('ws');
-
-const wss = new WebSocket.Server({ port: 1447 })
-const messageSchema = yup.mixed()
-yup.object({
-    cmd: yup.string().required().matches(/[a-z]*/),
+const yup = require('yup');
+const axios = require('axios');
+const messageSchema = yup.object({
+  cmd: yup
+    .string()
+    .required()
+    .matches(/[a-z]*/),
+  user: yup.string().optional(),
+  game: yup.object({
     rounds: yup.number().min(3).max(50).integer(),
-    round_length: yup.number().integer().min(300).max(120000)
+    round_length: yup.number().integer().min(3).max(60),
+  }).optional(),
+  answer: yup.number().integer().min(0).max(3).optional(),
+  // user: yup.string().required()
+});
+
+const userSchema = yup.string().min(3).max(16)
+const gameSchema = yup.object({
+  rounds: yup.number().min(3).max(50).integer(),
+  round_length: yup.number().integer().min(3).max(60),
 })
-let game_running = false
 
-let clients = []
-let playing = []
-let listeners = []
-let new_conns = []
-let trivia = []
-let trivia_at = ""
+const wss = new WebSocket.Server({ port: 1447 });
 
+let clients = [];
+let playing = [];
+const listeners = [];
+let trivia = [];
+let trivia_at = '';
+let accepting = true;
 
-const validateAnswerListener = (conn, msg, curQ) => {
-    conn.send(JSON.stringify(msg));
-    playing.push(conn.on('message', () => { }))
-    const z = client_response => {
-        if (client_response == curQ.correct_answer) {
-            conn.send(true);
-        } else {
-            conn.send(false);
-        }
-        return z
-    }
+wss.on('connection', (ws) => {
+  ws.on('close', () => (clients = clients.filter((conn) => conn !== ws)))
+  clients.push(ws);
+  ws.registered = false
+  ws.on('message', (msg) => {
+    msgHandler(ws, msg);
+    registerListener(ws)
+  });
+  listener(ws)
+});
+
+const registerListener = (ws) => {
+  if (ws.registered) {
+    return true
+  }
+  else if (ws.msg?.cmd == 'register') {
+    console.log('Registering :', ws.msg?.user)
+    // console.log('registered as')
+    ws.user = ws.msg?.user
+    ws.registered = true
+    ws.send("Signed in as: " + ws.user)
+  }
 }
 
-const gameLoop = () => {
-    
-    listenForPlayers
-    const curQ = trivia.shift()
-    const msg = { question: curQ.question, answers: [curQ.correct_answer, ...curQ.incorrect_answers].sort() }
-    clrListener.forEach(listener => {
-        console.log(getEventListeners().toString);
-    })
-    
+const msgHandler = (ws, msg) => {
+  let message = {}
+  try {
+    message = JSON.parse(msg.toString());
+  } catch (err) {
+    ws.send(msg.toString() + ' is invalid JSON');
+    console.error(msg.toString() + ' is invalid JSON');
+    return -1;
+  }
+  // console.log(message, messageSchema.isValidSync(message))
+  if (messageSchema.isValidSync(message)) {
+    ws.msg = message
+    ws.user = message.user
+    // ws.send(JSON.stringify(ws.msg));
+  }
+};
+
+const listener = (ws) => {
+  ws.on('message', () => {
+    if (accepting) {
+      listenForStart(ws)
+    } else {
+      listenForAnswers(ws)
+    }
+  })
+};
+
+const listenForStart = async (ws) => {
+  // console.log("listen for start", ws.msg, gameSchema.isValidSync(ws.msg?.game))
+  if (ws.msg.cmd == 'start_game' && gameSchema.isValidSync(ws.msg.game)) {
+    await populate_trivia(ws.msg.game.rounds)
+    // console.log('at:', trivia)
+    start_trivia(ws)
+  }
+}
+
+const start_trivia = (ws) => {
+  playing = clients.filter(client => client.registered)
+  accepting = false
+  let round = 0
+  let curQ = {}
+  let gameLoop = () => {
+    curQ = trivia.shift();
+    ws.answer = curQ.correct_answer
+    ws.information = {
+      question: curQ.question,
+      answers: [curQ.correct_answer, ...curQ.incorrect_answers].sort(),
+      users: playing.map(player => player.user)
+    }
+
     playing.forEach(client => {
-        clrListener.push(validateAnswerListener(client, msg, curQ))
-    });
-    
-    game.round += 1
-    if (game.round === rounds) {
-        game_running = false
-        clearInterval(game.gameLoop)
+      client.send(JSON.stringify(ws.information))
+    })
+    round += 1;
+    // console.log(curQ)
+    if (ws.msg.game.rounds == round) {
+      clearInterval(loop)
+      accepting = true
     }
-}
-
-const listenForPlayers = async (ws, client_res) => {
-    
-    let round_length = 30
-    playing = [...clients]
-    
-    
-    const msg = JSON.parse(msesage.toString())
-    messageSchema.validate(client_res).then(async () => {
-        if (client_res.cmd == 'start_game' && game_running == false) {
-            rounds = client_res.rounds ?? rounds;
-            round_length = client_res.round_length ?? round_length;
-            await populate_trivia(rounds)
-            ws.send("Starting game with paramaters: \n" + JSON.stringify(client_res))
-            game_running = true
-            playing = [...clients];
-            
-        }
-        
-    })
+  }
+  gameLoop()
+  const loop = setInterval(gameLoop, ws.msg.game.round_length * 1000)
 }
 
 
-
-wss.on('connection', ws => {
-    clients.push(ws)
-    ws.on('message', async message => {
-        let round_length = 3000
-        let rounds = 2
-        const msg = JSON.parse(message.toString())
-        if (!messageSchema.validateSync(msg)) {
-            ws.send("Message is not valid. Try again")
-        }
-        if (msg.cmd == "start_game") {
-            rounds = msg.rounds ? msg.rounds : rounds
-            round_length = msg.round_length ? msg.round_length : round_length
-            ws.send(`Starting game with paramaters: ` + JSON.stringify(msg))
-            let game = {
-                'round': 0, 'func': setInterval(() => {
-                    ws.send(`Message sent after ${round_length / 10} seconds `)
-                    game.round += 1
-                    if (game.round == rounds) {
-                        clearInterval(game.func)
-                    }
-                }, round_length)
-            }
-        }
-        await populate_trivia(rounds)
-        gameLoop(round_length)
-        // let round_length = 3000
-        // let rounds = 2
-        // const msg = JSON.parse(message.toString())
-        // messageSchema.validate(msg).then(async () => {
-        //     if (msg.cmd == "start_game" && game_running == false) {
-        //         rounds = msg.rounds ? msg.rounds : rounds
-        //         round_length = msg.round_length ? msg.round_length : round_length
-        //         await populate_trivia(rounds, errHandle)
-        //         ws.send(`Starting game with paramaters: ` + JSON.stringify(msg))
-        //         game_running = true
-        //         let game = {
-        //             'round': 0, 'gameLoop': setInterval(gameLoop, round_length)
-        //         }
-        //         gameLoop()
-        //     }
-        ws.on('close', () => (clients = clients.filter((conn) => (conn === ws ? false : true))))
-    })
-    ws.send(`Hello, you are connected with ${wss.clients.size - 1} other users!`)
-})
-
+const listenForAnswers = (ws) => {
+  if (ws.answer == ws.answers[ws.msg.answer]) {
+    ws.send('correct');
+  } else ws.send('incorrect')
+};
 
 const populate_trivia = async (rounds) => {
-    if (trivia_at === '') {
-        await axios.get('https://opentdb.com/api_token.php?command=request').then(result => {
-            trivia_at = result.data.token
-            console.log(trivia_at)
-        })
-    }
-    if (trivia_at !== "") {
-        await axios.get(`https://opentdb.com/api.php?category=15&amount=${rounds}&token=${trivia_at}`).then(res => {
-            if (res.data.response_code == 0) {
-                trivia = res.data.results
-            } else {
-                console.error("error!\n", res.data)
-                process.exit()
-            }
-        })
-    }
-}
+  if (trivia_at === '') {
+    await axios
+      .get('https://opentdb.com/api_token.php?command=request')
+      .then((result) => {
+        trivia_at = result.data.token;
+      });
+  }
+  if (trivia_at !== '') {
+    await axios
+      .get(
+        `https://opentdb.com/api.php?category=15&amount=${rounds}&token=${trivia_at}`,
+      )
+      .then((res) => {
+        if (res.data.response_code == 0) {
+          trivia = res.data.results;
+        } else {
+          console.error('error!\n', res.data);
+          process.exit();
+        }
+      });
+  }
+};
