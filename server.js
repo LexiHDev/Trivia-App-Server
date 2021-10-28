@@ -45,7 +45,7 @@ const registerListener = (ws) => {
   if (ws.registered) {
     return true
   }
-  else if (ws.msg?.cmd == 'register') {
+  else if (ws.msg?.cmd == 'register' && userSchema.isValidSync(ws.msg?.user)) {
     console.log('Registering :', ws.msg?.user)
     // console.log('registered as')
     ws.user = ws.msg?.user
