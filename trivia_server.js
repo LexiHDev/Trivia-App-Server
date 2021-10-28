@@ -6,12 +6,16 @@ const messageSchema = yup.object({
     .string()
     .required()
     .matches(/[a-z]*/),
+  user: yup.string().optional(),
   game: yup.object({
     rounds: yup.number().min(3).max(50).integer(),
     round_length: yup.number().integer().min(3).max(60),
   }).optional(),
   answer: yup.number().integer().min(0).max(3).optional(),
+  // user: yup.string().required()
 });
+
+const userSchema = yup.string().min(3).max(16)
 const gameSchema = yup.object({
   rounds: yup.number().min(3).max(50).integer(),
   round_length: yup.number().integer().min(3).max(60),
@@ -27,13 +31,23 @@ let trivia_at = '';
 let accepting = true;
 
 wss.on('connection', (ws) => {
+  ws.registered = false
   clients.push(ws);
   ws.on('message', (msg) => {
     msgHandler(ws, msg);
   });
+  registerListener(ws)
   listener(ws)
 });
 
+const registerListener = (ws) => {
+  if (ws.registered) {
+    return true
+  }
+  else if (ws.msg.cmd == 'register') {
+    ws.user = ws.msg?.username
+  }
+}
 
 const msgHandler = (ws, msg) => {
   let message = {}
@@ -44,8 +58,10 @@ const msgHandler = (ws, msg) => {
     console.error(msg.toString() + ' is invalid JSON');
     return -1;
   }
+  console.log(message, messageSchema.isValidSync(message))
   if (messageSchema.isValidSync(message)) {
     ws.msg = message
+    ws.user = message.user
     console.log(ws.msg, messageSchema.isValidSync(message));
     ws.send(JSON.stringify(ws.msg));
   }
@@ -77,11 +93,17 @@ const start_trivia = (ws) => {
   let curQ = {}
   let gameLoop = () => {
     curQ = trivia.shift();
-    ws.answers = [curQ.correct_answer, ...curQ.incorrect_answers]
-    ws.question = curQ.question
     ws.answer = curQ.correct_answer
+    ws.information = {
+      question: curQ.question,
+      answers: [curQ.correct_answer, ...curQ.incorrect_answers].sort(),
+      users: playing.map(player => {
+        player.user
+      })
+    }
+
     playing.forEach(client => {
-      client.send(JSON.stringify(curQ))
+      client.send(JSON.stringify(ws.information))
     })
     round += 1;
     console.log(curQ)
