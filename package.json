@@ -20,6 +20,8 @@
     "yup": "^0.32.11"
   },
   "devDependencies": {
+    "eslint": "^8.1.0",
+    "eslint-config-google": "^0.14.0",
     "nodemon": "^2.0.14"
   }
 }
