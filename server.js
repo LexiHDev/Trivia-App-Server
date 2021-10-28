@@ -21,7 +21,7 @@ const gameSchema = yup.object({
   round_length: yup.number().integer().min(3).max(60),
 })
 
-const wss = new WebSocket.Server({ process.env.PORT });
+const wss = new WebSocket.Server({ port: process.env.PORT });
 
 let loop = {}
 let clients = [];
