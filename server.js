@@ -50,9 +50,11 @@ const registerListener = (ws) => {
       score: 0
     }
     ws.registered = true
-    ws.send("Signed in as: " + ws.user.username)
+    console.log("sending:\n" + JSON.stringify({ "cmd": "Signed in as: " + ws.user.username }))
+    ws.send(JSON.stringify({ "cmd": "Signed in as: " + ws.user.username }))
     clients.forEach(cli => {
-      cli.send(JSON.stringify({Users: clients.map(cli => cli.user).filter(cli => cli != undefined)}))
+      console.log("Sending:" + JSON.stringify(clients.map(cli => cli.user).filter(cli => cli != undefined)))
+      cli.send(JSON.stringify({ cmd: "users", Users: clients.map(cli => cli.user).filter(cli => cli != undefined) }))
     })
   }
 }
@@ -62,7 +64,7 @@ const msgHandler = (ws, msg) => {
   try {
     message = JSON.parse(msg.toString());
   } catch (err) {
-    ws.send(msg.toString() + ' is invalid JSON');
+    ws.send(JSON.stringify({ "error": msg.toString() + ' is invalid JSON' }));
     console.error(msg.toString() + ' is invalid JSON');
     return -1;
   }
@@ -73,7 +75,7 @@ const msgHandler = (ws, msg) => {
   }
 };
 
-const listener = (ws) => {
+const  listener = (ws) => {
   ws.on('message', () => {
     if (accepting) {
       listenForStart(ws)
@@ -104,9 +106,12 @@ const start_trivia = (ws) => {
     ws.answers = [curQ.correct_answer, ...curQ.incorrect_answers].sort()
     console.log(curQ)
     ws.information = {
-      question: curQ.question,
-      answers: ws.answers,
-      users: playing.map(player => player.user)
+      cmd: "trivia_question",
+      question: {
+        question: curQ.question,
+        answers: ws.answers,
+        users: playing.map(player => player.user)
+      }
     }
 
     playing.forEach(client => {
