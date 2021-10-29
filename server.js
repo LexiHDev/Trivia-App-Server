@@ -1,6 +1,15 @@
 const WebSocket = require('ws');
 const yup = require('yup');
 const axios = require('axios');
+const dotenv = require('dotenv')
+dotenv.config()
+const twitchHeader = {
+  headers: {
+    Authorization: process.env.AUTH,
+    "Client-Id": process.env.CLIENTID
+  }
+}
+
 const messageSchema = yup.object({
   cmd: yup
     .string()
@@ -41,20 +50,28 @@ wss.on('connection', (ws) => {
   listener(ws)
 });
 
-const registerListener = (ws) => {
+const registerListener = async (ws) => {
+  console.log(twitchHeader)
   if (ws.msg?.cmd == 'register' && userSchema.isValidSync(ws.msg?.user)) {
     console.log('Registering :', ws.msg?.user)
     // console.log('registered as')
     ws.user = {
-      username: ws.msg?.user,
-      score: 0
+      user_name: ws.msg?.user,
+      score: 0,
+      pfpUrl: ""
     }
+    await axios.get(`https://api.twitch.tv/helix/users?login=${ws.user?.user_name}`, twitchHeader)
+      .then(res =>
+        ws.user.pfpUrl = res.data.data[0].profile_image_url
+        ).catch(err => {
+          console.error(err)
+        })
     ws.registered = true
-    console.log("sending:\n" + JSON.stringify({ "cmd": "Signed in as: " + ws.user.username }))
-    ws.send(JSON.stringify({ "cmd": "Signed in as: " + ws.user.username }))
+    console.log("sending:\n" + JSON.stringify({ "cmd": "Signed in as: " + ws.user.user_name }))
+    ws.send(JSON.stringify({ "cmd": "Signed in as: " + ws.user.user_name }))
     clients.forEach(cli => {
       console.log("Sending:" + JSON.stringify(clients.map(cli => cli.user).filter(cli => cli != undefined)))
-      cli.send(JSON.stringify({ cmd: "users", Users: clients.map(cli => cli.user).filter(cli => cli != undefined) }))
+      cli.send(JSON.stringify({ cmd: "users", users: clients.map(cli => cli.user).filter(cli => cli != undefined) }))
     })
   }
 }
@@ -75,11 +92,11 @@ const msgHandler = (ws, msg) => {
   }
 };
 
-const  listener = (ws) => {
+const listener = (ws) => {
   ws.on('message', () => {
     if (accepting) {
       listenForStart(ws)
-    } else {
+    } else if ( ws.answer ) {
       listenForAnswers(ws)
     }
   })
@@ -95,23 +112,27 @@ const listenForStart = async (ws) => {
 }
 
 const start_trivia = (ws) => {
-  playing = clients.filter(client => client.registered)
   accepting = false
   let round = 0
   let curQ = {}
   ws.curGame = ws.msg.game
   let gameLoop = () => {
+    playing = clients.filter(client => client.registered)
     curQ = trivia.shift();
     ws.answer = curQ.correct_answer
     ws.answers = [curQ.correct_answer, ...curQ.incorrect_answers].sort()
+    playing.forEach(player => {
+      player.answers = ws.answers
+      player.answer = ws.answer
+    })
     console.log(curQ)
     ws.information = {
       cmd: "trivia_question",
       question: {
         question: curQ.question,
         answers: ws.answers,
-        users: playing.map(player => player.user)
-      }
+      },
+      users: playing.map(player => player.user)
     }
 
     playing.forEach(client => {
@@ -136,7 +157,7 @@ const listenForAnswers = (ws) => {
   // console.log(ws.msg?.answer, ws.answer, ws.answers)
   if (ws.answer == ws.answers[Number(ws.msg?.answer)]) {
     ws.user.score += 1
-    ws.answer = 'LOLNOPE'
+    ws.answer = undefined
     ws.send('correct');
   } else ws.send('incorrect')
 };
@@ -152,7 +173,7 @@ const populate_trivia = async (rounds) => {
   if (trivia_at !== '') {
     await axios
       .get(
-        `https://opentdb.com/api.php?category=15&amount=${rounds}&token=${trivia_at}`,
+        `https://opentdb.com/api.php?category=15&type=multiple&encode=base64&amount=${rounds}&token=${trivia_at}`,
       )
       .then((res) => {
         if (res.data.response_code == 0) {
