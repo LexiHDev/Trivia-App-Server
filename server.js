@@ -37,7 +37,6 @@ let clients = [];
 let playing = [];
 let trivia = [];
 let trivia_at = '';
-let accepting = true;
 
 wss.on('connection', (ws) => {
   ws.on('close', () => (clients = clients.filter((conn) => conn !== ws)))
@@ -63,9 +62,9 @@ const registerListener = async (ws) => {
     await axios.get(`https://api.twitch.tv/helix/users?login=${ws.user?.user_name}`, twitchHeader)
       .then(res =>
         ws.user.pfpUrl = res.data.data[0].profile_image_url
-        ).catch(err => {
-          console.error(err)
-        })
+      ).catch(err => {
+        console.error(err)
+      })
     ws.registered = true
     console.log("sending:\n" + JSON.stringify({ "cmd": "Signed in as: " + ws.user.user_name }))
     ws.send(JSON.stringify({ "cmd": "Signed in as: " + ws.user.user_name }))
@@ -94,17 +93,14 @@ const msgHandler = (ws, msg) => {
 
 const listener = (ws) => {
   ws.on('message', () => {
-    if (accepting) {
-      listenForStart(ws)
-    } else if ( ws.answer ) {
-      listenForAnswers(ws)
-    }
+    listenForStart(ws)
+    listenForAnswers(ws)
   })
 };
 
 const listenForStart = async (ws) => {
   // console.log("listen for start", ws.msg, gameSchema.isValidSync(ws.msg?.game))
-  if (ws.msg.cmd == 'start_game' && gameSchema.isValidSync(ws.msg.game)) {
+  if (ws.answer === undefined && ws.msg.cmd == 'start_game' && gameSchema.isValidSync(ws.msg.game)) {
     await populate_trivia(ws.msg.game.rounds)
     // console.log('at:', trivia)
     start_trivia(ws)
@@ -155,12 +151,14 @@ const start_trivia = (ws) => {
 
 const listenForAnswers = (ws) => {
   // console.log(ws.msg?.answer, ws.answer, ws.answers)
-  if (ws.answer == ws.answers[Number(ws.msg?.answer)]) {
-    ws.user.score += 1
-    ws.answer = undefined
-    ws.send('correct');
-  } else ws.send('incorrect')
-};
+  if (ws.answer && ws.msg.cmd === "answer" ) {
+    if (ws.answer == ws.answers[Number(ws.msg?.answer)]) {
+      ws.user.score += 1
+      ws.answer = undefined
+      ws.send('correct');
+    } else ws.send('incorrect')
+  };
+}
 
 const populate_trivia = async (rounds) => {
   if (trivia_at === '') {
