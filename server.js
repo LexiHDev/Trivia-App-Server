@@ -110,7 +110,7 @@ const register_handler = async (ws) => {
 		});
 };
 
-const quick_json = (msg, trivia = false) => {
+const quick_json = (msg) => {
 	/* TODO
    * Add some outgoing verification.
    * error stuff
