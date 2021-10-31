@@ -12,8 +12,9 @@ const twitch_header = {
 		"Client-Id": process.env.CLIENTID,
 	},
 };
-let room_info = {};
 
+let room_info = {};
+let trivia_at = "";
 let clients = [];
 let rooms = { "": [] };
 
@@ -109,7 +110,7 @@ const register_handler = async (ws) => {
 		});
 };
 
-const quick_json = (msg) => {
+const quick_json = (msg, trivia = false) => {
 	/* TODO
    * Add some outgoing verification.
    * error stuff
@@ -146,6 +147,9 @@ const create_lobby = (ws) => {
 		rooms[lobbyID] = [];
 		room_info[lobbyID] = {};
 		room_info[lobbyID].admin = ws;
+		room_info[lobbyID].rounds = ws.payload.rounds;
+		room_info[lobbyID].round_length = ws.payload.round_length;
+		room_info[lobbyID].round = 0;
 		ws.lobby = lobbyID;
 		rooms[lobbyID].push(ws);
 		ws.send(quick_json({ type: "lobby_created", payload: { lobby: lobbyID } }));
@@ -159,8 +163,8 @@ const create_lobby = (ws) => {
 	}
 };
 
-const start_game = (ws) => {
-	room_info[ws.lobby].trivia = get_trivia(ws.rounds);
+const start_game = async (ws) => {
+	room_info[ws.lobby].trivia = await get_trivia(room_info[ws.lobby].rounds);
 	let curQ;
 	let gameLoop = () => {
 		/*
@@ -174,15 +178,15 @@ const start_game = (ws) => {
 		/*
      * Set up the current question on all the current players.
      */
-		curQ = room_info[ws.lobby].shift();
+		curQ = room_info[ws.lobby].trivia.shift();
 		const correctAns = curQ.correct_answer;
-		const currAnswers = [curQ.correct_answer, ...curQ.answers].sort();
-		rooms[ws.lobby].forEach((player) => {
+		const currAnswers = [curQ.correct_answer, ...curQ.incorrect_answers].sort();
+		room_info[ws.lobby].playing.forEach((player) => {
 			player.answers = currAnswers;
 			player.correctAns = correctAns;
 		});
 
-		rooms[ws.lobby].playing.forEach((player) => {
+		room_info[ws.lobby].playing.forEach((player) => {
 			player.send(
 				quick_json({
 					type: "question",
@@ -197,29 +201,33 @@ const start_game = (ws) => {
 			);
 		});
 
-		console.log(`[${ws.lobby}]:\n` + quick_json(curQ));
+		console.log(`[${ws.lobby}]:\n` + quick_json(curQ, true));
 
 		/*
      * Check for final round.
      */
-		if (room_info[ws.lobby].rounds == room_info[ws.lobby].round) {
+		if (room_info[ws.lobby].rounds - 1 == room_info[ws.lobby].round) {
 			clearInterval(room_info[ws.lobby].gameLoop);
-			rooms[ws.lobby].playing.forEach((player) => {
-				player.send({
-					type: "game_done",
-					payload: {
-						users: rooms[ws.lobby]
-							.map(player => player.user)
-							.sort((oldPlayer, newPlayer) => oldPlayer.score - newPlayer.score)
-					}
+			room_info[ws.lobby].round = 0;
+			setTimeout(() => {
+				
+				room_info[ws.lobby].playing.forEach((player) => {
+					player.send(quick_json({
+						type: "game_done",
+						payload: {
+							users: rooms[ws.lobby]
+								.map(player => player.user)
+								.sort((oldPlayer, newPlayer) => oldPlayer.score - newPlayer.score)
+						}
+					}));
 				});
-			});
+			}, room_info[ws.lobby].round_length * 1000);
 		}
 		room_info[ws.lobby].round += 1;
 		
 	};
 	gameLoop();
-	room_info[ws.lobby].gameLoop = setInterval(gameLoop, room_info[ws.lobby].round_length);
+	room_info[ws.lobby].gameLoop = setInterval(gameLoop, room_info[ws.lobby].round_length * 1000);
 };
 
 const answer_handler = (ws) => {
@@ -239,7 +247,6 @@ const answer_handler = (ws) => {
 };
 
 const get_trivia = async (rounds) => {
-	let trivia_at = "";
 	let trivia;
 	await axios
 		.get("https://opentdb.com/api_token.php?command=request")
@@ -247,6 +254,14 @@ const get_trivia = async (rounds) => {
 			trivia_at = result.data.token;
 		});
 	if (trivia_at !== "") {
+		/*
+		* TODO:
+		* Select different type
+		* Select different categories
+		* INFO: 
+		* Category 15 is Video Game Trivia
+		 */
+		
 		await axios
 			.get(
 				`https://opentdb.com/api.php?category=15&type=multiple&encode=base64&amount=${rounds}&token=${trivia_at}`
@@ -255,7 +270,7 @@ const get_trivia = async (rounds) => {
 				if (res.data.response_code == 0) {
 					trivia = res.data.results;
 				} else {
-					console.error("error!\n", res.data);
+					console.error("error!\n", res.data, "\nwith rounds / token:", `${rounds}:${trivia_at}`);
 					process.exit();
 				}
 			});
