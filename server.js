@@ -41,7 +41,17 @@ const wss = new WebSocket.Server({ port: process.env.PORT });
 
 wss.on("connection", (ws) => {
 	const msg_handler = (msg) => {
-		msg = JSON.parse(msg.toString());
+		
+		/* I'm pretty sure this is unsafe, but this isn't a production ready app...
+		so caution to the wind! */ 
+		try {
+			msg = JSON.parse(msg.toString());
+		} 
+		catch (err) {
+			ws.send("Incoming msg invalid");
+			return 0;
+		}
+
 		if (msg_schema.isValidSync(msg)) {
 			ws.payload = msg.payload;
 			switch (msg.type) {
@@ -110,8 +120,24 @@ const join_lobby = (ws) => {
 	if (ws.lobby) {
 		rooms[ws.lobby] = rooms[ws.lobby].filter((client) => client !== ws);
 	}
-	rooms[ws.payload.lobby].push(ws);
-	ws.lobby = ws.payload.lobby;
+	
+	if (rooms[ws.payload.lobby]) {
+		rooms[ws.payload.lobby].push(ws);
+		ws.lobby = ws.payload.lobby;
+		ws.send(quick_json({
+			type: "joined_lobby",
+			payload: {
+				lobby: ws.payload.lobby
+			}
+		}));
+	} else {
+		ws.send(quick_json({
+			type: "join_failed",
+			payload: {
+				message: "Failed to join lobby: " + ws.payload.lobby 
+			}
+		}));
+	}
 };
 
 const create_lobby = (ws) => {
