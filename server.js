@@ -1,185 +1,119 @@
-const WebSocket = require('ws');
-const yup = require('yup');
-const axios = require('axios');
-const dotenv = require('dotenv')
-dotenv.config()
+const axios = require("axios");
+const dotenv = require("dotenv");
+const WebSocket = require("ws");
+const yup = require("yup");
+const nanoid = require("nanoid");
+
+dotenv.config();
+
 const twitchHeader = {
-  headers: {
-    Authorization: process.env.AUTH,
-    "Client-Id": process.env.CLIENTID
-  }
-}
+	headers: {
+		Authorization: process.env.AUTH,
+		"Client-Id": process.env.CLIENTID,
+	},
+};
 
-const messageSchema = yup.object({
-  cmd: yup
-    .string()
-    .required()
-    .matches(/[a-z]*/),
-  user: yup.string().optional(),
-  game: yup.object({
-    rounds: yup.number().min(3).max(50).integer(),
-    round_length: yup.number().integer().min(3).max(60),
-  }).optional(),
-  answer: yup.number().integer().min(0).max(3).optional(),
-  // user: yup.string().required()
+let clients = [];
+let rooms = { "": [] };
+
+const msgSchema = yup.object({
+	type: yup
+		.string()
+		.required()
+		.matches(/[a-z]*/i),
+	payload: yup
+		.object({
+			user: yup.string().optional(),
+			game: yup
+				.object({
+					rounds: yup.number().min(3).max(50).integer(),
+					round_length: yup.number().integer().min(3).max(5),
+				})
+				.optional(),
+			answer: yup.number().integer().min(0).max(3).optional(),
+		})
+		.required(),
 });
-
-const userSchema = yup.string().min(3).max(16)
-const gameSchema = yup.object({
-  rounds: yup.number().min(3).max(50).integer(),
-  round_length: yup.number().integer().min(3).max(60),
-})
 
 const wss = new WebSocket.Server({ port: process.env.PORT });
 
-let loop = {}
-let clients = [];
-let playing = [];
-let trivia = [];
-let trivia_at = '';
-
-wss.on('connection', (ws) => {
-  ws.on('close', () => (clients = clients.filter((conn) => conn !== ws)))
-  clients.push(ws);
-  ws.registered = false
-  ws.on('message', (msg) => {
-    msgHandler(ws, msg);
-    registerListener(ws)
-  });
-  listener(ws)
+wss.on("connection", (ws) => {
+	const msgHandler = (msg) => {
+		if (msgSchema.isValidSync(msg)) {
+			ws.payload = msg.payload;
+			switch (msg.type) {
+			case "register":
+				registerHandler(ws);
+				break;
+			case "create_lobby":
+				create_lobby(ws);
+				break;
+			case "join_lobby":
+				join_lobby(ws);
+				break;
+			case "start_game":
+				startGame(ws);
+				break;
+			case "answer":
+				answerHandler(ws);
+				break;
+			}
+		} else {
+			ws.send(msgSchema.validate(msg));
+		}
+	};
+	ws.on("message", msgHandler);
 });
 
-const registerListener = async (ws) => {
-  console.log(twitchHeader)
-  if (ws.msg?.cmd == 'register' && userSchema.isValidSync(ws.msg?.user)) {
-    console.log('Registering :', ws.msg?.user)
-    // console.log('registered as')
-    ws.user = {
-      user_name: ws.msg?.user,
-      score: 0,
-      pfpUrl: ""
-    }
-    await axios.get(`https://api.twitch.tv/helix/users?login=${ws.user?.user_name}`, twitchHeader)
-      .then(res =>
-        ws.user.pfpUrl = res.data.data[0].profile_image_url
-      ).catch(err => {
-        console.error(err)
-      })
-    ws.registered = true
-    console.log("sending:\n" + JSON.stringify({ "cmd": "Signed in as: " + ws.user.user_name }))
-    ws.send(JSON.stringify({ "cmd": "Signed in as: " + ws.user.user_name }))
-    clients.forEach(cli => {
-      console.log("Sending:" + JSON.stringify(clients.map(cli => cli.user).filter(cli => cli != undefined)))
-      cli.send(JSON.stringify({ cmd: "users", users: clients.map(cli => cli.user).filter(cli => cli != undefined) }))
-    })
-  }
-}
-
-const msgHandler = (ws, msg) => {
-  let message = {}
-  try {
-    message = JSON.parse(msg.toString());
-  } catch (err) {
-    ws.send(JSON.stringify({ "error": msg.toString() + ' is invalid JSON' }));
-    console.error(msg.toString() + ' is invalid JSON');
-    return -1;
-  }
-  console.log(message, messageSchema.isValidSync(message))
-  if (messageSchema.isValidSync(message)) {
-    ws.msg = message
-    ws.send(JSON.stringify(ws.msg));
-  }
+const registerHandler = async (ws) => {
+	console.log("user registering as: " + ws.payload.user_name);
+	ws.user = {
+		user_name: ws.payload.user_name,
+		score: 0,
+		pfpUrl: "",
+	};
+	await axios
+		.get(
+			`https://api.twitch.tv/helix/users?login=${ws.user.user_name}`,
+			twitchHeader
+		)
+		.then((res) => {
+			ws.user.pfpUrl = res.data.data[0].profile_image_url;
+			ws.registered = true;
+			ws.send(
+				quickJSON({
+					type: "registered",
+					payload: {
+						message: "Successfully signed in as: " + ws.user.user_name,
+						pfpUrl: ws.user.pfpUrl,
+					},
+				})
+			);
+			clients.push(ws);
+		})
+		.catch((err) => {
+			console.error(err);
+		});		
 };
 
-const listener = (ws) => {
-  ws.on('message', () => {
-    listenForStart(ws)
-    listenForAnswers(ws)
-  })
+const quickJSON = (msg) => {
+	/* TODO
+   * Add some outgoing verification.
+   * error stuff
+   */
+	return JSON.stringify(msg);
+};
+const join_lobby = (ws) => {
+	if (ws.lobby) {
+		rooms[ws.lobby] = rooms[ws.lobby].filter((client) => client !== ws);
+	}
 };
 
-const listenForStart = async (ws) => {
-  // console.log("listen for start", ws.msg, gameSchema.isValidSync(ws.msg?.game))
-  if (ws.answer === undefined && ws.msg.cmd == 'start_game' && gameSchema.isValidSync(ws.msg.game)) {
-    await populate_trivia(ws.msg.game.rounds)
-    // console.log('at:', trivia)
-    start_trivia(ws)
-  }
-}
-
-const start_trivia = (ws) => {
-  accepting = false
-  let round = 0
-  let curQ = {}
-  ws.curGame = ws.msg.game
-  let gameLoop = () => {
-    playing = clients.filter(client => client.registered)
-    curQ = trivia.shift();
-    ws.answer = curQ.correct_answer
-    ws.answers = [curQ.correct_answer, ...curQ.incorrect_answers].sort()
-    playing.forEach(player => {
-      player.answers = ws.answers
-      player.answer = ws.answer
-    })
-    console.log(curQ)
-    ws.information = {
-      cmd: "trivia_question",
-      question: {
-        question: curQ.question,
-        answers: ws.answers,
-      },
-      users: playing.map(player => player.user)
-    }
-
-    playing.forEach(client => {
-      client.send(JSON.stringify(ws.information))
-    })
-    round += 1;
-    // console.log(curQ)
-    if (ws.curGame.rounds == round) {
-      clearInterval(loop)
-      playing.forEach(client => {
-        client.user.score = 0
-      })
-      accepting = true
-    }
-  }
-  gameLoop()
-  loop = setInterval(gameLoop, ws.curGame.round_length * 1000)
-}
-
-
-const listenForAnswers = (ws) => {
-  // console.log(ws.msg?.answer, ws.answer, ws.answers)
-  if (ws.answer && ws.msg.cmd === "answer" ) {
-    if (ws.answer == ws.answers[Number(ws.msg?.answer)]) {
-      ws.user.score += 1
-      ws.answer = undefined
-      ws.send('correct');
-    } else ws.send('incorrect')
-  };
-}
-
-const populate_trivia = async (rounds) => {
-  if (trivia_at === '') {
-    await axios
-      .get('https://opentdb.com/api_token.php?command=request')
-      .then((result) => {
-        trivia_at = result.data.token;
-      });
-  }
-  if (trivia_at !== '') {
-    await axios
-      .get(
-        `https://opentdb.com/api.php?category=15&type=multiple&encode=base64&amount=${rounds}&token=${trivia_at}`,
-      )
-      .then((res) => {
-        if (res.data.response_code == 0) {
-          trivia = res.data.results;
-        } else {
-          console.error('error!\n', res.data);
-          process.exit();
-        }
-      });
-  }
+const create_lobby = (ws) => {
+	const lobbyID = nanoid.nanoid(6);
+	rooms[lobbyID] = [];
+	ws.lobby = lobbyID;
+	rooms[lobbyID].push(ws);
+	ws.send(quickJSON({ type: "lobby_created", payload: { lobby: lobbyID } }));
+	
 };
