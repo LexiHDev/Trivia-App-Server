@@ -29,7 +29,7 @@ const msg_schema = yup.object({
 			game: yup
 				.object({
 					rounds: yup.number().min(3).max(50).integer(),
-					round_length: yup.number().integer().min(30).max(120),
+					round_length: yup.number().integer().min(10).max(120),
 				})
 				.optional(),
 			answer: yup.number().integer().min(0).max(3).optional(),
