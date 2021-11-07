@@ -92,7 +92,7 @@ const register_handler = async (ws) => {
 			twitch_header
 		)
 		.then((res) => {
-			ws.user.pfpUrl = res.data.data[0].profile_image_url;
+			ws.user.pfpUrl = res.data.data[0]?.profile_image_url ? res.data.data[0]?.profile_image_url : "https://picsum.photos/200" ;
 			ws.registered = true;
 			ws.send(
 				quick_json({
